@@ -122,4 +122,41 @@ class AuthController extends Controller
             'message' => 'Verification email resent successfully',
         ]);
     }
+
+    public function updateProfile(Request $request)
+    {
+        $user = $request->user();
+
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'profile_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120', // 5MB max
+        ]);
+
+        // Update name
+        $user->name = $request->name;
+
+        // Handle profile image upload
+        if ($request->hasFile('profile_image')) {
+            // Delete old image if exists
+            if ($user->profile_image) {
+                $oldImagePath = str_replace(url('/'), '', $user->profile_image);
+                if (file_exists(public_path($oldImagePath))) {
+                    unlink(public_path($oldImagePath));
+                }
+            }
+
+            // Store new image
+            $image = $request->file('profile_image');
+            $imageName = time() . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
+            $image->move(public_path('uploads/profiles'), $imageName);
+            $user->profile_image = url('uploads/profiles/' . $imageName);
+        }
+
+        $user->save();
+
+        return response()->json([
+            'message' => 'Profile updated successfully',
+            'user' => $user,
+        ]);
+    }
 }

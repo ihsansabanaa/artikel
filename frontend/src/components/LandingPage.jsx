@@ -15,36 +15,83 @@ const LandingPage = () => {
     const [comments, setComments] = useState({});
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [detailPost, setDetailPost] = useState(null);
+    const [sidebarOpen, setSidebarOpen] = useState(true);
 
     useEffect(() => {
-        // Fetch approved posts - no redirect, everyone can see the feed
-        fetchApprovedPosts();
-        // Initialize interactions from localStorage
-        const savedInteractions = localStorage.getItem('postInteractions');
-        if (savedInteractions) {
-            setPostInteractions(JSON.parse(savedInteractions));
-        }
-        // Load comments from localStorage
-        const savedComments = localStorage.getItem('postComments');
-        if (savedComments) {
-            setComments(JSON.parse(savedComments));
-        }
+        // Fetch approved posts and check liked status
+        const initializePosts = async () => {
+            await fetchApprovedPosts();
+        };
+        
+        initializePosts();
+
+        // Auto refresh posts every 10 seconds to get updated counts
+        const interval = setInterval(() => {
+            fetchApprovedPosts();
+        }, 10000); // 10 seconds
+
+        return () => clearInterval(interval);
     }, []);
 
-    const handleLike = (postId) => {
-        setPostInteractions(prev => {
-            const current = prev[postId] || { likes: 0, comments: 0, reposts: 0, views: 0, liked: false };
-            const newInteractions = {
-                ...prev,
-                [postId]: {
-                    ...current,
-                    likes: current.liked ? current.likes - 1 : current.likes + 1,
-                    liked: !current.liked
+    const handleLike = async (postId) => {
+        // Check if user is logged in
+        if (!user) {
+            alert('Silakan login terlebih dahulu untuk menyukai postingan');
+            navigate('/login');
+            return;
+        }
+
+        const token = localStorage.getItem('token');
+        const isLiked = postInteractions[postId]?.liked || false;
+
+        console.log('handleLike:', { postId, isLiked, currentInteractions: postInteractions[postId] });
+
+        try {
+            const endpoint = isLiked 
+                ? `http://localhost:8000/api/posts/${postId}/unlike`
+                : `http://localhost:8000/api/posts/${postId}/like`;
+
+            console.log('Calling endpoint:', endpoint);
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+            });
+
+            const data = await response.json();
+            console.log('Response data:', data);
+
+            if (response.ok) {
+                // Update local state
+                setPostInteractions(prev => ({
+                    ...prev,
+                    [postId]: {
+                        liked: data.liked,
+                    }
+                }));
+
+                // Update posts with new count
+                setPosts(prev => prev.map(p => 
+                    p.id === postId ? { ...p, likes_count: data.likes_count } : p
+                ));
+
+                // Update detailPost if it's the same post
+                if (detailPost && detailPost.id === postId) {
+                    setDetailPost(prev => ({ ...prev, likes_count: data.likes_count }));
                 }
-            };
-            localStorage.setItem('postInteractions', JSON.stringify(newInteractions));
-            return newInteractions;
-        });
+            } else {
+                console.error('API error:', data);
+                if (response.status === 401) {
+                    alert('Sesi Anda telah berakhir. Silakan login kembali.');
+                    navigate('/login');
+                }
+            }
+        } catch (error) {
+            console.error('Failed to like/unlike post:', error);
+        }
     };
 
     const handleComment = (post) => {
@@ -54,42 +101,124 @@ const LandingPage = () => {
         }
         setSelectedPost(post);
         setShowCommentModal(true);
+        // Fetch comments when modal opens
+        fetchComments(post.id);
     };
 
-    const submitComment = () => {
+    const submitComment = async (postId = null) => {
         if (!commentText.trim()) return;
         
-        const newComment = {
-            id: Date.now(),
-            user: user.name,
-            text: commentText,
-            date: new Date().toISOString()
-        };
+        const targetPostId = postId || selectedPost?.id;
+        if (!targetPostId) return;
 
-        // Add comment to local state
-        setComments(prev => {
-            const postComments = prev[selectedPost.id] || [];
-            const updated = {
+        const token = localStorage.getItem('token');
+
+        try {
+            const response = await fetch(`http://localhost:8000/api/posts/${targetPostId}/comments`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ comment: commentText })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // Update posts with new comments count
+                setPosts(prev => prev.map(p => 
+                    p.id === targetPostId ? { ...p, comments_count: data.comments_count } : p
+                ));
+
+                // Update detailPost if it's the same post
+                if (detailPost && detailPost.id === targetPostId) {
+                    setDetailPost(prev => ({ ...prev, comments_count: data.comments_count }));
+                }
+
+                // Fetch fresh comments
+                fetchComments(targetPostId);
+
+                setCommentText('');
+                
+                // Close modal if it was from comment modal
+                if (!postId && selectedPost) {
+                    setShowCommentModal(false);
+                }
+            } else {
+                console.error('Failed to add comment:', data);
+                alert(data.message || 'Failed to add comment');
+            }
+        } catch (error) {
+            console.error('Failed to add comment:', error);
+            alert('Failed to add comment');
+        }
+    };
+
+    const fetchComments = async (postId) => {
+        try {
+            const response = await fetch(`http://localhost:8000/api/posts/${postId}/comments`);
+            const data = await response.json();
+            
+            setComments(prev => ({
                 ...prev,
-                [selectedPost.id]: [...postComments, newComment]
-            };
-            localStorage.setItem('postComments', JSON.stringify(updated));
-            return updated;
-        });
+                [postId]: data.comments
+            }));
+        } catch (error) {
+            console.error('Failed to fetch comments:', error);
+        }
+    };
 
-        // Update comment count
-        setPostInteractions(prev => {
-            const current = prev[selectedPost.id] || { likes: 0, comments: 0, reposts: 0, views: 0, liked: false };
-            const newInteractions = {
-                ...prev,
-                [selectedPost.id]: { ...current, comments: (comments[selectedPost.id]?.length || 0) + 1 }
-            };
-            localStorage.setItem('postInteractions', JSON.stringify(newInteractions));
-            return newInteractions;
-        });
+    const handleDownload = async (post) => {
+        // Check if user is logged in
+        if (!user) {
+            alert('Silakan login terlebih dahulu untuk mengunduh dokumen');
+            navigate('/login');
+            return;
+        }
 
-        setCommentText('');
-        setShowCommentModal(false);
+        const token = localStorage.getItem('token');
+
+        try {
+            const response = await fetch(`http://localhost:8000/api/posts/${post.id}/download`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+            });
+
+            if (response.ok) {
+                // Get filename from content-disposition or use default
+                const contentDisposition = response.headers.get('content-disposition');
+                let filename = 'document';
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+                    if (filenameMatch) {
+                        filename = filenameMatch[1];
+                    }
+                }
+
+                // Convert response to blob and download
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } else {
+                const data = await response.json();
+                alert(data.message || 'Gagal mengunduh dokumen');
+                if (response.status === 401) {
+                    navigate('/login');
+                }
+            }
+        } catch (error) {
+            console.error('Failed to download document:', error);
+            alert('Gagal mengunduh dokumen');
+        }
     };
 
     const handleRepost = (postId) => {
@@ -111,21 +240,40 @@ const LandingPage = () => {
         });
     };
 
-    const incrementViews = (postId) => {
-        setPostInteractions(prev => {
-            const current = prev[postId] || { likes: 0, comments: 0, reposts: 0, views: 0, liked: false };
-            const newInteractions = {
-                ...prev,
-                [postId]: { ...current, views: current.views + 1 }
-            };
-            localStorage.setItem('postInteractions', JSON.stringify(newInteractions));
-            return newInteractions;
-        });
+    const incrementViews = async (postId) => {
+        const token = localStorage.getItem('token');
+
+        try {
+            const response = await fetch(`http://localhost:8000/api/posts/${postId}/view`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token && { 'Authorization': `Bearer ${token}` })
+                },
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // Update posts with new count
+                setPosts(prev => prev.map(p => 
+                    p.id === postId ? { ...p, views_count: data.views_count } : p
+                ));
+
+                // Update detailPost if it's the same post
+                if (detailPost && detailPost.id === postId) {
+                    setDetailPost(prev => ({ ...prev, views_count: data.views_count }));
+                }
+            }
+        } catch (error) {
+            console.error('Failed to increment views:', error);
+        }
     };
 
     const openPostDetail = (post) => {
         setDetailPost(post);
         setShowDetailModal(true);
+        fetchComments(post.id);
         incrementViews(post.id);
     };
 
@@ -134,6 +282,28 @@ const LandingPage = () => {
             const response = await fetch('http://localhost:8000/api/posts/approved');
             const data = await response.json();
             setPosts(data.posts);
+            
+            // Check liked status for each post
+            const token = localStorage.getItem('token');
+            const likedStatus = {};
+
+            // Use Promise.all for parallel requests
+            await Promise.all(data.posts.map(async (post) => {
+                try {
+                    const likeResponse = await fetch(`http://localhost:8000/api/posts/${post.id}/check-like`, {
+                        headers: {
+                            ...(token && { 'Authorization': `Bearer ${token}` })
+                        }
+                    });
+                    const likeData = await likeResponse.json();
+                    likedStatus[post.id] = { liked: likeData.liked };
+                } catch (error) {
+                    console.error('Failed to check like status:', error);
+                    likedStatus[post.id] = { liked: false };
+                }
+            }));
+
+            setPostInteractions(likedStatus);
         } catch (error) {
             console.error('Failed to fetch posts:', error);
         } finally {
@@ -142,113 +312,106 @@ const LandingPage = () => {
     };
 
     return (
-        <div className="twitter-layout">
-            {/* Fixed Header */}
-            <header className="top-header">
-                <div className="header-content">
-                    <div className="logo">
-                        <h2 className="logo-text">ArticleHub</h2>
-                    </div>
-                    <nav className="header-nav">
-                        {user ? (
-                            <span className="user-name">Hi, {user.name}</span>
-                        ) : (
-                            <>
-                                <button onClick={() => navigate('/login')} className="btn-login">
-                                    Sign in
+        <div className={`article-website ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
+            {/* Header */}
+            <header className="site-header">
+                <div className="container">
+                    <div className="header-wrapper">
+                        <div className="logo-section">
+                            <h1 className="site-logo" onClick={() => navigate('/')}>ArticleHub</h1>
+                            <p className="site-tagline">Baca, Tulis, Bagikan</p>
+                        </div>
+                        
+                        {/* Horizontal Navigation Menu */}
+                        {user && (
+                            <nav className="horizontal-nav">
+                                <button onClick={() => navigate('/')} className="horizontal-nav-item active">
+                                    Beranda
                                 </button>
-                                <button onClick={() => navigate('/register')} className="btn-signup">
-                                    Sign up
+                                <button onClick={() => navigate('/dashboard')} className="horizontal-nav-item">
+                                    Tulis Artikel
                                 </button>
-                            </>
+                                <button onClick={() => navigate('/my-posts')} className="horizontal-nav-item">
+                                    Artikel Saya
+                                </button>
+                                {user.is_admin && (
+                                    <button onClick={() => navigate('/admin')} className="horizontal-nav-item">
+                                        Admin
+                                    </button>
+                                )}
+                            </nav>
                         )}
-                    </nav>
+                        
+                        <nav className="main-nav">
+                            {user ? (
+                                <>
+                                    <button onClick={() => navigate('/profile')} className="user-menu-btn">
+                                        {user.profile_image || user.avatar ? (
+                                            <img src={user.profile_image || user.avatar} alt={user.name} />
+                                        ) : (
+                                            <span>{user.name.charAt(0).toUpperCase()}</span>
+                                        )}
+                                    </button>
+                                    <button onClick={async () => {
+                                        const token = localStorage.getItem('token');
+                                        try {
+                                            await fetch('http://localhost:8000/api/logout', {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Authorization': `Bearer ${token}`,
+                                                    'Content-Type': 'application/json',
+                                                },
+                                            });
+                                        } catch (error) {
+                                            console.error('Logout error:', error);
+                                        }
+                                        localStorage.removeItem('token');
+                                        localStorage.removeItem('user');
+                                        window.location.href = '/';
+                                    }} className="btn-nav-logout">
+                                        Logout
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <button onClick={() => navigate('/login')} className="btn-nav-login">
+                                        Masuk
+                                    </button>
+                                    <button onClick={() => navigate('/register')} className="btn-nav-signup">
+                                        Daftar
+                                    </button>
+                                </>
+                            )}
+                        </nav>
+                    </div>
                 </div>
             </header>
 
-            {/* Main Container */}
-            <div className="main-container">
-                {/* Left Sidebar */}
-                <aside className="left-sidebar">
-                    {user ? (
-                        <nav className="sidebar-nav">
-                            <button onClick={() => navigate('/')} className="nav-item active">
-                                <svg viewBox="0 0 24 24" className="nav-icon">
-                                    <g><path d="M12 1.696L.622 8.807l1.06 1.696L3 9.679V19.5C3 20.881 4.119 22 5.5 22h13c1.381 0 2.5-1.119 2.5-2.5V9.679l1.318.824 1.06-1.696L12 1.696zM12 16.5c-1.933 0-3.5-1.567-3.5-3.5s1.567-3.5 3.5-3.5 3.5 1.567 3.5 3.5-1.567 3.5-3.5 3.5z"></path></g>
-                                </svg>
-                                <span className="nav-text">Beranda</span>
-                            </button>
-
-                            <button onClick={() => navigate('/dashboard')} className="nav-item">
-                                <svg viewBox="0 0 24 24" className="nav-icon">
-                                    <g><path d="M23 3c-6.62-.1-10.38 2.421-13.05 6.03C7.29 12.61 6 17.331 6 22h2c0-1.007.07-2.012.19-3H12c4.1 0 7.48-3.082 7.94-7.054C22.79 10.147 23.17 6.359 23 3zm-7 8h-1.5v2H16c.63-.016 1.2-.08 1.72-.188C16.95 15.24 14.68 17 12 17H8.55c.57-2.512 1.57-4.851 3-6.78 2.16-2.912 5.29-4.911 9.45-5.187C20.95 8.079 19.9 11 16 11zM4 9V6H1V4h3V1h2v3h3v2H6v3H4z"></path></g>
-                                </svg>
-                                <span className="nav-text">Buat Postingan</span>
-                            </button>
-
-                            <button onClick={() => navigate('/my-posts')} className="nav-item">
-                                <svg viewBox="0 0 24 24" className="nav-icon">
-                                    <g><path d="M7.5 3.75C6.5 3.75 5.5 4.5 5.5 5.75v12.5c0 1.25 1 2 2 2h9c1 0 2-.75 2-2V5.75c0-1.25-1-2-2-2h-9zm0 1.5h9c.25 0 .5.25.5.5v12.5c0 .25-.25.5-.5.5h-9c-.25 0-.5-.25-.5-.5V5.75c0-.25.25-.5.5-.5zM9 7v1.5h6V7H9zm0 3v1.5h6V10H9zm0 3v1.5h4V13H9z"></path></g>
-                                </svg>
-                                <span className="nav-text">Postingan Saya</span>
-                            </button>
-
-                            {user.is_admin && (
-                                <button onClick={() => navigate('/admin')} className="nav-item">
-                                    <svg viewBox="0 0 24 24" className="nav-icon">
-                                        <g><path d="M10.54 1.75h2.92l1.57 2.36c.11.17.32.25.53.21l2.53-.59 2.17 2.17-.58 2.54c-.05.2.04.41.21.53l2.36 1.57v2.92l-2.36 1.57c-.17.12-.26.33-.21.53l.58 2.54-2.17 2.17-2.53-.59c-.21-.04-.42.04-.53.21l-1.57 2.36h-2.92l-1.58-2.36c-.11-.17-.32-.25-.52-.21l-2.54.59-2.17-2.17.58-2.54c.05-.2-.03-.41-.21-.53l-2.35-1.57v-2.92L4.1 8.97c.18-.12.26-.33.21-.53L3.73 5.9 5.9 3.73l2.54.59c.2.04.41-.04.52-.21l1.58-2.36zm1.07 2l-.98 1.47C10.05 6.08 9 6.5 7.99 6.27l-1.46-.34-.6.6.33 1.46c.24 1.01-.18 2.07-1.05 2.64l-1.46.98v.78l1.46.98c.87.57 1.29 1.63 1.05 2.64l-.33 1.46.6.6 1.46-.34c1.01-.23 2.06.19 2.64 1.05l.98 1.47h.78l.97-1.47c.58-.86 1.63-1.28 2.65-1.05l1.45.34.61-.6-.34-1.46c-.23-1.01.18-2.07 1.05-2.64l1.47-.98v-.78l-1.47-.98c-.87-.57-1.28-1.63-1.05-2.64l.34-1.46-.61-.6-1.45.34c-1.02.23-2.07-.19-2.65-1.05l-.97-1.47h-.78zM12 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5c.82 0 1.5-.67 1.5-1.5s-.68-1.5-1.5-1.5zM8.5 12c0-1.93 1.56-3.5 3.5-3.5 1.93 0 3.5 1.57 3.5 3.5s-1.57 3.5-3.5 3.5c-1.94 0-3.5-1.57-3.5-3.5z"></path></g>
-                                    </svg>
-                                    <span className="nav-text">Admin Panel</span>
+            {/* Main Content */}
+            <main className="main-content">
+                <div className="container">
+                    <div className="content-wrapper">
+                        {/* Welcome Widget */}
+                        {user && (
+                            <div className="welcome-widget">
+                                <h3 className="widget-title">Selamat Datang, {user.name}!</h3>
+                                <p className="widget-description">
+                                    Mulai berbagi cerita dan pengetahuan Anda dengan ribuan pembaca kami. Tulis artikel baru sekarang!
+                                </p>
+                                <button onClick={() => navigate('/dashboard')} className="btn-widget-cta">
+                                    Tulis Artikel Sekarang
                                 </button>
-                            )}
+                            </div>
+                        )}
 
-                            <div className="nav-divider"></div>
-
-                            <div className="user-profile-card">
-                                <div className="user-profile-info">
-                                    {user.avatar ? (
-                                        <img src={user.avatar} alt={user.name} className="user-profile-avatar" />
-                                    ) : (
-                                        <div className="user-profile-avatar-placeholder">
-                                            {user.name.charAt(0).toUpperCase()}
-                                        </div>
-                                    )}
-                                    <div className="user-profile-details">
-                                        <span className="user-profile-name">{user.name}</span>
-                                        <span className="user-profile-email">{user.email}</span>
-                                    </div>
+                        {/* Articles Section */}
+                        <section className="articles-section">
+                            <h2>Artikel Populer</h2>
+                            {loading ? (
+                                <div className="loading-state">
+                                    <div className="loading-spinner"></div>
+                                    <p>Memuat artikel...</p>
                                 </div>
-                            </div>
-                        </nav>
-                    ) : (
-                        <div className="sidebar-content">
-                            <h2 className="sidebar-title">ArticleHub</h2>
-                            <p className="sidebar-description">
-                                Platform untuk berbagi dan menemukan artikel menarik dari komunitas.
-                            </p>
-                            <div className="sidebar-cta">
-                                <h3>Bergabung Sekarang</h3>
-                                <p>Mulai berbagi artikel dan konten Anda dengan komunitas</p>
-                                <button onClick={() => navigate('/register')} className="btn-cta-sidebar">
-                                    Buat Akun Gratis
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </aside>
-
-                {/* Center Feed */}
-                <main className="center-feed">
-                    <div className="feed-header">
-                        <h2>Beranda</h2>
-                    </div>
-
-                    <div className="feed-content">
-                        {loading ? (
-                            <div className="loading-container">
-                                <div className="loading-spinner"></div>
-                                <p>Memuat postingan...</p>
-                            </div>
                         ) : posts.length === 0 ? (
                             <div className="empty-state">
                                 <div className="empty-icon">📝</div>
@@ -261,173 +424,89 @@ const LandingPage = () => {
                                 )}
                             </div>
                         ) : (
-                            <div className="posts-container">
+                            <div className="articles-grid">
                                 {posts.map((post) => (
-                                    <article key={post.id} className="post-card" onClick={() => openPostDetail(post)}>
-                                        <div className="post-header">
-                                            <div className="post-avatar">
-                                                {post.user.avatar ? (
-                                                    <img src={post.user.avatar} alt={post.user.name} />
-                                                ) : (
-                                                    <div className="avatar-placeholder">
-                                                        {post.user.name.charAt(0).toUpperCase()}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="post-meta">
-                                                <span className="author-name">{post.user.name}</span>
-                                                <span className="post-date">
-                                                    · {new Date(post.approved_at).toLocaleDateString('id-ID', { 
-                                                        day: 'numeric',
-                                                        month: 'short',
-                                                        year: 'numeric'
-                                                    })}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <div className="post-body">
-                                            {post.content && (
-                                                <div className="post-text">
-                                                    <p>{post.content}</p>
-                                                </div>
-                                            )}
-
-                                            {post.image_path && (
-                                                <div className="post-image">
+                                    <article key={post.id} className="article-card" onClick={() => openPostDetail(post)}>
+                                        {/* Article Image */}
+                                        <div className="article-image-wrapper">
+                                            {post.image_path ? (
+                                                <div className="article-image">
                                                     <img
                                                         src={`http://localhost:8000/storage/${post.image_path}`}
-                                                        alt="Post content"
+                                                        alt="Article cover"
                                                         loading="lazy"
                                                     />
                                                 </div>
-                                            )}
-
-                                            {post.document_path && (
-                                                <div className="post-document">
-                                                    <div className="document-info">
-                                                        <div className="document-icon">📄</div>
-                                                        <div className="document-details">
-                                                            <span className="document-name">{post.document_name}</span>
-                                                            <a
-                                                                href={`http://localhost:8000/storage/${post.document_path}`}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="document-link"
-                                                                onClick={() => incrementViews(post.id)}
-                                                            >
-                                                                Lihat Dokumen →
-                                                            </a>
-                                                        </div>
-                                                    </div>
+                                            ) : (
+                                                <div className="article-image article-image-placeholder">
+                                                    <svg viewBox="0 0 24 24" width="80" height="80" fill="#cbd5e0">
+                                                        <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 11.5c.83 0 1.5-.67 1.5-1.5S9.83 8.5 9 8.5 7.5 9.17 7.5 10s.67 1.5 1.5 1.5zM17 17H7v-2l2-2 1.5 1.5L13 12l4 4v1z"/>
+                                                    </svg>
                                                 </div>
                                             )}
                                         </div>
 
-                                        {/* Post Actions */}
-                                        <div className="post-actions-bar">
-                                            <button 
-                                                className={`action-btn ${postInteractions[post.id]?.liked ? 'liked' : ''}`}
-                                                onClick={(e) => { e.stopPropagation(); handleLike(post.id); }}
-                                                title="Like"
-                                            >
-                                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                                    <g><path d="M16.697 5.5c-1.222-.06-2.679.51-3.89 2.16l-.805 1.09-.806-1.09C9.984 6.01 8.526 5.44 7.304 5.5c-1.243.07-2.349.78-2.91 1.91-.552 1.12-.633 2.78.479 4.82 1.074 1.97 3.257 4.27 7.129 6.61 3.87-2.34 6.052-4.64 7.126-6.61 1.111-2.04 1.03-3.7.477-4.82-.561-1.13-1.666-1.84-2.908-1.91zm4.187 7.69c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z"></path></g>
-                                                </svg>
-                                                <span>{postInteractions[post.id]?.likes || 0}</span>
-                                            </button>
+                                        {/* Article Content */}
+                                        <div className="article-content">
+                                            <div className="article-header-info">
+                                                <div className="article-meta">
+                                                    <div className="author-avatar">
+                                                        {post.user.profile_image || post.user.avatar ? (
+                                                            <img src={post.user.profile_image || post.user.avatar} alt={post.user.name} />
+                                                        ) : (
+                                                            <div className="author-avatar-placeholder">
+                                                                {post.user.name.charAt(0).toUpperCase()}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="author-info">
+                                                        <span className="author-name">{post.user.name}</span>
+                                                        <span className="article-date">
+                                                            {new Date(post.approved_at).toLocaleDateString('id-ID', { 
+                                                                day: 'numeric',
+                                                                month: 'long',
+                                                                year: 'numeric'
+                                                            })} | {Math.ceil(post.content?.length / 200) || 1} menit lalu
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
 
-                                            <button 
-                                                className="action-btn"
-                                                onClick={(e) => { e.stopPropagation(); handleComment(post); }}
-                                                title="Comment"
-                                            >
-                                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                                    <g><path d="M1.751 10c0-4.42 3.584-8 8.005-8h4.366c4.49 0 8.129 3.64 8.129 8.13 0 2.96-1.607 5.68-4.196 7.11l-8.054 4.46v-3.69h-.067c-4.49.1-8.183-3.51-8.183-8.01zm8.005-6c-3.317 0-6.005 2.69-6.005 6 0 3.37 2.77 6.08 6.138 6.01l.351-.01h1.761v2.3l5.087-2.81c1.951-1.08 3.163-3.13 3.163-5.36 0-3.39-2.744-6.13-6.129-6.13H9.756z"></path></g>
-                                                </svg>
-                                                <span>{comments[post.id]?.length || 0}</span>
-                                            </button>
+                                            {post.content && (
+                                                <h3 className="article-title">{post.content.length > 100 ? post.content.substring(0, 100) + '...' : post.content}</h3>
+                                            )}
 
-                                            <button 
-                                                className="action-btn"
-                                                onClick={(e) => { e.stopPropagation(); handleRepost(post.id); }}
-                                                title="Repost"
-                                            >
-                                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                                    <g><path d="M4.5 3.88l4.432 4.14-1.364 1.46L5.5 7.55V16c0 1.1.896 2 2 2H13v2H7.5c-2.209 0-4-1.79-4-4V7.55L1.432 9.48.068 8.02 4.5 3.88zM16.5 6H11V4h5.5c2.209 0 4 1.79 4 4v8.45l2.068-1.93 1.364 1.46-4.432 4.14-4.432-4.14 1.364-1.46 2.068 1.93V8c0-1.1-.896-2-2-2z"></path></g>
-                                                </svg>
-                                                <span>{postInteractions[post.id]?.reposts || 0}</span>
-                                            </button>
-
-                                            <button 
-                                                className="action-btn"
-                                                title="Views"
-                                            >
-                                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                                    <g><path d="M8.75 21V3h2v18h-2zM18 21V8.5h2V21h-2zM4 21l.004-10h2L6 21H4zm9.248 0v-7h2v7h-2z"></path></g>
-                                                </svg>
-                                                <span>{postInteractions[post.id]?.views || 0}</span>
-                                            </button>
+                                            <div className="article-stats">
+                                                <span className={`stat-item ${postInteractions[post.id]?.liked ? 'liked' : ''}`}
+                                                    onClick={(e) => { e.stopPropagation(); handleLike(post.id); }}>
+                                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                                    </svg>
+                                                    {post.likes_count || 0}
+                                                </span>
+                                                <span className="stat-item"
+                                                    onClick={(e) => { e.stopPropagation(); handleComment(post); }}>
+                                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                                        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
+                                                    </svg>
+                                                    {post.comments_count || 0}
+                                                </span>
+                                                <span className="stat-item">
+                                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                                        <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+                                                    </svg>
+                                                    {post.views_count || 0}
+                                                </span>
+                                            </div>
                                         </div>
                                     </article>
                                 ))}
                             </div>
                         )}
+                        </section>
                     </div>
-                </main>
-
-                {/* Right Sidebar */}
-                <aside className="right-sidebar">
-                    <div className="sidebar-widget">
-                        <h3>Trending Topics</h3>
-                        <div className="trending-list">
-                            <div className="trending-item">
-                                <span className="trending-tag">#Technology</span>
-                                <span className="trending-count">1.2K posts</span>
-                            </div>
-                            <div className="trending-item">
-                                <span className="trending-tag">#Design</span>
-                                <span className="trending-count">890 posts</span>
-                            </div>
-                            <div className="trending-item">
-                                <span className="trending-tag">#Programming</span>
-                                <span className="trending-count">756 posts</span>
-                            </div>
-                            <div className="trending-item">
-                                <span className="trending-tag">#Business</span>
-                                <span className="trending-count">623 posts</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="sidebar-widget">
-                        <h3>Tentang ArticleHub</h3>
-                        <p className="about-text">
-                            Platform berbagi artikel dan konten yang telah dipercaya oleh ribuan pengguna.
-                        </p>
-                        <div className="stats-mini">
-                            <div className="stat-mini">
-                                <strong>10K+</strong>
-                                <span>Pengguna Aktif</span>
-                            </div>
-                            <div className="stat-mini">
-                                <strong>50K+</strong>
-                                <span>Artikel</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="footer-links">
-                        <a href="#">Tentang</a>
-                        <a href="#">Bantuan</a>
-                        <a href="#">Ketentuan</a>
-                        <a href="#">Privasi</a>
-                    </div>
-                    <div className="copyright">
-                        <p>© 2025 ArticleHub</p>
-                    </div>
-                </aside>
-            </div>
+                </div>
+            </main>
 
             {/* Comment Modal */}
             {showCommentModal && selectedPost && (
@@ -443,8 +522,8 @@ const LandingPage = () => {
                         <div className="comment-modal-post">
                             <div className="post-preview">
                                 <div className="post-author-small">
-                                    {selectedPost.user.avatar ? (
-                                        <img src={selectedPost.user.avatar} alt={selectedPost.user.name} className="avatar-small" />
+                                    {selectedPost.user.profile_image || selectedPost.user.avatar ? (
+                                        <img src={selectedPost.user.profile_image || selectedPost.user.avatar} alt={selectedPost.user.name} className="avatar-small" />
                                     ) : (
                                         <div className="avatar-small-placeholder">
                                             {selectedPost.user.name.charAt(0).toUpperCase()}
@@ -459,22 +538,30 @@ const LandingPage = () => {
                         </div>
 
                         <div className="comment-list">
-                            {comments[selectedPost.id]?.map((comment) => (
-                                <div key={comment.id} className="comment-item">
-                                    <div className="comment-avatar-placeholder">
-                                        {comment.user.charAt(0).toUpperCase()}
-                                    </div>
-                                    <div className="comment-content">
-                                        <div className="comment-header">
-                                            <span className="comment-author">{comment.user}</span>
-                                            <span className="comment-date">
-                                                {new Date(comment.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
-                                            </span>
+                            {comments[selectedPost.id]?.length > 0 ? (
+                                comments[selectedPost.id].map((comment) => (
+                                    <div key={comment.id} className="comment-item">
+                                        {comment.user?.profile_image || comment.user?.avatar ? (
+                                            <img src={comment.user.profile_image || comment.user.avatar} alt={comment.user.name} className="comment-avatar" />
+                                        ) : (
+                                            <div className="comment-avatar-placeholder">
+                                                {comment.user?.name?.charAt(0).toUpperCase() || '?'}
+                                            </div>
+                                        )}
+                                        <div className="comment-content">
+                                            <div className="comment-header">
+                                                <span className="comment-author">{comment.user?.name || 'Unknown'}</span>
+                                                <span className="comment-date">
+                                                    {new Date(comment.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                            </div>
+                                            <p className="comment-text">{comment.comment}</p>
                                         </div>
-                                        <p className="comment-text">{comment.text}</p>
                                     </div>
-                                </div>
-                            ))}
+                                ))
+                            ) : (
+                                <p className="no-comments">Belum ada komentar. Jadilah yang pertama berkomentar!</p>
+                            )}
                         </div>
 
                         <div className="comment-input-container">
@@ -513,8 +600,8 @@ const LandingPage = () => {
                         <div className="detail-modal-body">
                             {/* Post Author */}
                             <div className="detail-author">
-                                {detailPost.user.avatar ? (
-                                    <img src={detailPost.user.avatar} alt={detailPost.user.name} className="detail-avatar" />
+                                {detailPost.user.profile_image || detailPost.user.avatar ? (
+                                    <img src={detailPost.user.profile_image || detailPost.user.avatar} alt={detailPost.user.name} className="detail-avatar" />
                                 ) : (
                                     <div className="detail-avatar-placeholder">
                                         {detailPost.user.name.charAt(0).toUpperCase()}
@@ -554,51 +641,61 @@ const LandingPage = () => {
                             {/* Post Document */}
                             {detailPost.document_path && (
                                 <div className="detail-document">
-                                    <div className="detail-document-info">
-                                        <svg viewBox="0 0 24 24" width="32" height="32" className="detail-doc-icon">
-                                            <g><path d="M7 4V3h2v1h6V3h2v1h1.5C19.89 4 21 5.12 21 6.5v12c0 1.38-1.11 2.5-2.5 2.5h-13C4.12 21 3 19.88 3 18.5v-12C3 5.12 4.12 4 5.5 4H7zm0 2H5.5c-.27 0-.5.22-.5.5v12c0 .28.23.5.5.5h13c.28 0 .5-.22.5-.5v-12c0-.28-.22-.5-.5-.5H17v1h-2V6H9v1H7V6zm0 6h2v-2H7v2zm0 4h2v-2H7v2zm4-4h2v-2h-2v2zm0 4h2v-2h-2v2zm4-4h2v-2h-2v2z"></path></g>
-                                        </svg>
-                                        <div className="detail-doc-text">
-                                            <span className="detail-doc-name">{detailPost.document_name}</span>
-                                            <a
-                                                href={`http://localhost:8000/storage/${detailPost.document_path}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="detail-doc-link"
-                                                onClick={(e) => e.stopPropagation()}
-                                            >
-                                                Download Dokumen
-                                            </a>
-                                        </div>
+                                    <svg viewBox="0 0 24 24" width="40" height="40" className="detail-doc-icon" fill="#495057">
+                                        <g><path d="M7.5 4h9v2h-9V4zm0 6h9v2h-9v-2zm0 6h9v2h-9v-2zM5 2v20h14V2H5zm12 18H7V4h10v16z"></path></g>
+                                    </svg>
+                                    <div className="detail-doc-info">
+                                        <div className="detail-doc-name">{detailPost.document_name}</div>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDownload(detailPost);
+                                            }}
+                                            className="detail-doc-link"
+                                        >
+                                            📥 Download Dokumen
+                                        </button>
                                     </div>
                                 </div>
                             )}
 
                             {/* Post Stats */}
                             <div className="detail-stats">
-                                <div className="detail-stat-item">
-                                    <svg viewBox="0 0 24 24" width="18" height="18">
+                                <div 
+                                    className={`detail-stat-item clickable ${postInteractions[detailPost.id]?.liked ? 'liked' : ''}`}
+                                    onClick={(e) => { e.stopPropagation(); handleLike(detailPost.id); }}
+                                    style={{ cursor: 'pointer' }}
+                                >
+                                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
                                         <g><path d="M16.697 5.5c-1.222-.06-2.679.51-3.89 2.16l-.805 1.09-.806-1.09C9.984 6.01 8.526 5.44 7.304 5.5c-1.243.07-2.349.78-2.91 1.91-.552 1.12-.633 2.78.479 4.82 1.074 1.97 3.257 4.27 7.129 6.61 3.87-2.34 6.052-4.64 7.126-6.61 1.111-2.04 1.03-3.7.477-4.82-.561-1.13-1.666-1.84-2.908-1.91zm4.187 7.69c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z"></path></g>
                                     </svg>
-                                    <span>{postInteractions[detailPost.id]?.likes || 0} Likes</span>
+                                    <span>{detailPost.likes_count || 0} Likes</span>
                                 </div>
-                                <div className="detail-stat-item">
-                                    <svg viewBox="0 0 24 24" width="18" height="18">
+                                <div 
+                                    className="detail-stat-item clickable"
+                                    onClick={(e) => { e.stopPropagation(); handleComment(detailPost); }}
+                                    style={{ cursor: 'pointer' }}
+                                >
+                                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
                                         <g><path d="M1.751 10c0-4.42 3.584-8 8.005-8h4.366c4.49 0 8.129 3.64 8.129 8.13 0 2.96-1.607 5.68-4.196 7.11l-8.054 4.46v-3.69h-.067c-4.49.1-8.183-3.51-8.183-8.01zm8.005-6c-3.317 0-6.005 2.69-6.005 6 0 3.37 2.77 6.08 6.138 6.01l.351-.01h1.761v2.3l5.087-2.81c1.951-1.08 3.163-3.13 3.163-5.36 0-3.39-2.744-6.13-6.129-6.13H9.756z"></path></g>
                                     </svg>
-                                    <span>{comments[detailPost.id]?.length || 0} Comments</span>
+                                    <span>{detailPost.comments_count || 0} Comments</span>
                                 </div>
-                                <div className="detail-stat-item">
-                                    <svg viewBox="0 0 24 24" width="18" height="18">
+                                <div 
+                                    className="detail-stat-item clickable"
+                                    onClick={(e) => { e.stopPropagation(); handleRepost(detailPost.id); }}
+                                    style={{ cursor: 'pointer' }}
+                                >
+                                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
                                         <g><path d="M4.5 3.88l4.432 4.14-1.364 1.46L5.5 7.55V16c0 1.1.896 2 2 2H13v2H7.5c-2.209 0-4-1.79-4-4V7.55L1.432 9.48.068 8.02 4.5 3.88zM16.5 6H11V4h5.5c2.209 0 4 1.79 4 4v8.45l2.068-1.93 1.364 1.46-4.432 4.14-4.432-4.14 1.364-1.46 2.068 1.93V8c0-1.1-.896-2-2-2z"></path></g>
                                     </svg>
-                                    <span>{postInteractions[detailPost.id]?.reposts || 0} Reposts</span>
+                                    <span>{detailPost.reposts_count || 0} Reposts</span>
                                 </div>
                                 <div className="detail-stat-item">
-                                    <svg viewBox="0 0 24 24" width="18" height="18">
+                                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
                                         <g><path d="M8.75 21V3h2v18h-2zM18 21V8.5h2V21h-2zM4 21l.004-10h2L6 21H4zm9.248 0v-7h2v7h-2z"></path></g>
                                     </svg>
-                                    <span>{postInteractions[detailPost.id]?.views || 0} Views</span>
+                                    <span>{detailPost.views_count || 0} Views</span>
                                 </div>
                             </div>
 
@@ -610,16 +707,16 @@ const LandingPage = () => {
                                         {comments[detailPost.id].map((comment) => (
                                             <div key={comment.id} className="detail-comment-item">
                                                 <div className="detail-comment-avatar">
-                                                    {comment.user.charAt(0).toUpperCase()}
+                                                    {comment.user?.name?.charAt(0).toUpperCase() || comment.user?.charAt(0).toUpperCase() || 'U'}
                                                 </div>
                                                 <div className="detail-comment-content">
                                                     <div className="detail-comment-header">
-                                                        <span className="detail-comment-author">{comment.user}</span>
+                                                        <span className="detail-comment-author">{comment.user?.name || comment.user || 'Anonymous'}</span>
                                                         <span className="detail-comment-date">
-                                                            {new Date(comment.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                                                            {new Date(comment.created_at || comment.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                                                         </span>
                                                     </div>
-                                                    <p className="detail-comment-text">{comment.text}</p>
+                                                    <p className="detail-comment-text">{comment.comment || comment.text}</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -627,38 +724,32 @@ const LandingPage = () => {
                                 ) : (
                                     <p className="detail-no-comments">Belum ada komentar</p>
                                 )}
+                                
+                                {/* Comment Form */}
+                                <div className="detail-comment-form">
+                                    <div className="detail-comment-form-avatar">
+                                        {user ? user.name.charAt(0).toUpperCase() : 'G'}
+                                    </div>
+                                    <div className="detail-comment-form-input">
+                                        <textarea
+                                            placeholder={user ? "Tulis komentar..." : "Login untuk berkomentar"}
+                                            value={commentText}
+                                            onChange={(e) => setCommentText(e.target.value)}
+                                            disabled={!user}
+                                            rows="3"
+                                        />
+                                        {user && (
+                                            <button
+                                                className="btn-submit-comment"
+                                                onClick={() => submitComment(detailPost.id)}
+                                                disabled={!commentText.trim()}
+                                            >
+                                                Kirim Komentar
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div className="detail-modal-footer">
-                            <button 
-                                className={`detail-action-btn ${postInteractions[detailPost.id]?.liked ? 'liked' : ''}`}
-                                onClick={() => handleLike(detailPost.id)}
-                            >
-                                <svg viewBox="0 0 24 24" width="20" height="20">
-                                    <g><path d="M16.697 5.5c-1.222-.06-2.679.51-3.89 2.16l-.805 1.09-.806-1.09C9.984 6.01 8.526 5.44 7.304 5.5c-1.243.07-2.349.78-2.91 1.91-.552 1.12-.633 2.78.479 4.82 1.074 1.97 3.257 4.27 7.129 6.61 3.87-2.34 6.052-4.64 7.126-6.61 1.111-2.04 1.03-3.7.477-4.82-.561-1.13-1.666-1.84-2.908-1.91zm4.187 7.69c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z"></path></g>
-                                </svg>
-                                {postInteractions[detailPost.id]?.liked ? 'Liked' : 'Like'}
-                            </button>
-                            <button 
-                                className="detail-action-btn"
-                                onClick={() => { setShowDetailModal(false); handleComment(detailPost); }}
-                            >
-                                <svg viewBox="0 0 24 24" width="20" height="20">
-                                    <g><path d="M1.751 10c0-4.42 3.584-8 8.005-8h4.366c4.49 0 8.129 3.64 8.129 8.13 0 2.96-1.607 5.68-4.196 7.11l-8.054 4.46v-3.69h-.067c-4.49.1-8.183-3.51-8.183-8.01zm8.005-6c-3.317 0-6.005 2.69-6.005 6 0 3.37 2.77 6.08 6.138 6.01l.351-.01h1.761v2.3l5.087-2.81c1.951-1.08 3.163-3.13 3.163-5.36 0-3.39-2.744-6.13-6.129-6.13H9.756z"></path></g>
-                                </svg>
-                                Comment
-                            </button>
-                            <button 
-                                className="detail-action-btn"
-                                onClick={() => handleRepost(detailPost.id)}
-                            >
-                                <svg viewBox="0 0 24 24" width="20" height="20">
-                                    <g><path d="M4.5 3.88l4.432 4.14-1.364 1.46L5.5 7.55V16c0 1.1.896 2 2 2H13v2H7.5c-2.209 0-4-1.79-4-4V7.55L1.432 9.48.068 8.02 4.5 3.88zM16.5 6H11V4h5.5c2.209 0 4 1.79 4 4v8.45l2.068-1.93 1.364 1.46-4.432 4.14-4.432-4.14 1.364-1.46 2.068 1.93V8c0-1.1-.896-2-2-2z"></path></g>
-                                </svg>
-                                Repost
-                            </button>
                         </div>
                     </div>
                 </div>

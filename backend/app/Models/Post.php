@@ -16,10 +16,13 @@ class Post extends Model
         'status',
         'approved_at',
         'approved_by',
+        'reject_reason',
+        'rejected_at',
     ];
 
     protected $casts = [
         'approved_at' => 'datetime',
+        'rejected_at' => 'datetime',
     ];
 
     /**

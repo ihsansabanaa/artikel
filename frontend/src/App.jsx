@@ -7,6 +7,7 @@ import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import MyPosts from './components/MyPosts';
 import AdminDashboard from './components/AdminDashboard';
+import Profile from './components/Profile';
 import ProtectedRoute from './components/ProtectedRoute';
 import AuthCallback from './components/AuthCallback';
 import './App.css';
@@ -44,6 +45,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <Profile />
                 </ProtectedRoute>
               }
             />

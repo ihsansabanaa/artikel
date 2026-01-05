@@ -98,90 +98,100 @@ const Register = () => {
 
     return (
         <div className="auth-container">
-            <div className="auth-card">
-                <h2>Register</h2>
-                {error && <div className="error-message">{error}</div>}
-                {success && (
+            <div className="auth-wrapper">
+                <div className="auth-form-section">
+                    <div className="auth-card">
+                        <div className="auth-header">
+                            <h1>BAPPBEY BMTI</h1>
+                            <p className="auth-brand-subtitle">Sistem Informasi Artikel</p>
+                        </div>
+                        <h2>Register</h2>
+                        <p className="auth-subtitle">Buat akun baru Anda</p>
+                        {error && <div className="error-message">{error}</div>}
+                        {success && (
                     <div className="success-message">
                         {success}
                         <p style={{ marginTop: '10px', fontSize: '14px' }}>
                             Please check your email inbox and click the verification link.
                         </p>
-                        <Link to="/login" style={{ display: 'block', marginTop: '10px', color: '#667eea', fontWeight: '600' }}>
+                        <Link to="/login" style={{ display: 'block', marginTop: '10px', color: '#3b82f6', fontWeight: '600' }}>
                             Go to Login
                         </Link>
                     </div>
                 )}
                 
-                <div className="google-login-wrapper">
-                    <GoogleLogin
-                        onSuccess={handleGoogleSuccess}
-                        onError={handleGoogleError}
-                        useOneTap
-                        width="100%"
-                    />
-                </div>
+                                <form onSubmit={handleSubmit}>
+                            <div className="form-group">
+                                <label htmlFor="name">Nama Lengkap</label>
+                                <input
+                                    type="text"
+                                    id="name"
+                                    name="name"
+                                    value={formData.name}
+                                    onChange={handleChange}
+                                    required
+                                    placeholder="Masukkan nama lengkap Anda"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label htmlFor="email">Email</label>
+                                <input
+                                    type="email"
+                                    id="email"
+                                    name="email"
+                                    value={formData.email}
+                                    onChange={handleChange}
+                                    required
+                                    placeholder="Masukkan email Anda"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label htmlFor="password">Password</label>
+                                <input
+                                    type="password"
+                                    id="password"
+                                    name="password"
+                                    value={formData.password}
+                                    onChange={handleChange}
+                                    required
+                                    placeholder="Minimal 8 karakter"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label htmlFor="password_confirmation">Konfirmasi Password</label>
+                                <input
+                                    type="password"
+                                    id="password_confirmation"
+                                    name="password_confirmation"
+                                    value={formData.password_confirmation}
+                                    onChange={handleChange}
+                                    required
+                                    placeholder="Ulangi password Anda"
+                                />
+                            </div>
+                            <button type="submit" disabled={loading} className="btn-primary">
+                                {loading ? 'Loading...' : 'Daftar'}
+                            </button>
+                                </form>
 
-                <div className="divider">
-                    <span>OR</span>
-                </div>
+                        <div className="divider">
+                            <span>OR</span>
+                        </div>
 
-                <form onSubmit={handleSubmit}>
-                    <div className="form-group">
-                        <label htmlFor="name">Name</label>
-                        <input
-                            type="text"
-                            id="name"
-                            name="name"
-                            value={formData.name}
-                            onChange={handleChange}
-                            required
-                            placeholder="Enter your name"
-                        />
+                        <div className="google-login-wrapper">
+                            <GoogleLogin
+                                onSuccess={handleGoogleSuccess}
+                                onError={handleGoogleError}
+                                useOneTap
+                                width="100%"
+                            />
+                        </div>
+                        
+                        <p className="auth-link">
+                            Sudah punya akun? <Link to="/login">Login di sini</Link>
+                        </p>
                     </div>
-                    <div className="form-group">
-                        <label htmlFor="email">Email</label>
-                        <input
-                            type="email"
-                            id="email"
-                            name="email"
-                            value={formData.email}
-                            onChange={handleChange}
-                            required
-                            placeholder="Enter your email"
-                        />
-                    </div>
-                    <div className="form-group">
-                        <label htmlFor="password">Password</label>
-                        <input
-                            type="password"
-                            id="password"
-                            name="password"
-                            value={formData.password}
-                            onChange={handleChange}
-                            required
-                            placeholder="Enter your password (min. 8 characters)"
-                        />
-                    </div>
-                    <div className="form-group">
-                        <label htmlFor="password_confirmation">Confirm Password</label>
-                        <input
-                            type="password"
-                            id="password_confirmation"
-                            name="password_confirmation"
-                            value={formData.password_confirmation}
-                            onChange={handleChange}
-                            required
-                            placeholder="Confirm your password"
-                        />
-                    </div>
-                    <button type="submit" disabled={loading} className="btn-primary">
-                        {loading ? 'Loading...' : 'Register'}
-                    </button>
-                </form>
-                <p className="auth-link">
-                    Already have an account? <Link to="/login">Login here</Link>
-                </p>
+                </div>
             </div>
         </div>
     );

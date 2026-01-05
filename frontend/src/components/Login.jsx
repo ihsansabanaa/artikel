@@ -75,54 +75,60 @@ const Login = () => {
 
     return (
         <div className="auth-container">
-            <div className="auth-card">
-                <h2>Login</h2>
-                {error && <div className="error-message">{error}</div>}
-                {success && <div className="success-message">{success}</div>}
-                
-                <div className="google-login-wrapper">
-                    <GoogleLogin
-                        onSuccess={handleGoogleSuccess}
-                        onError={handleGoogleError}
-                        useOneTap
-                        width="100%"
-                    />
-                </div>
+            <div className="auth-wrapper">
+                <div className="auth-form-section">
+                    <div className="auth-card">
+                        <h2>Login</h2>
+                        <p className="auth-subtitle">Selamat datang kembali!</p>
+                        {error && <div className="error-message">{error}</div>}
+                        {success && <div className="success-message">{success}</div>}
+                        
+                                <form onSubmit={handleSubmit}>
+                            <div className="form-group">
+                                <label htmlFor="email">Email</label>
+                                <input
+                                    type="email"
+                                    id="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    required
+                                    placeholder="Masukkan email Anda"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label htmlFor="password">Password</label>
+                                <input
+                                    type="password"
+                                    id="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                    placeholder="Masukkan password Anda"
+                                />
+                            </div>
+                            <button type="submit" disabled={loading} className="btn-primary">
+                                {loading ? 'Loading...' : 'Login'}
+                            </button>
+                                </form>
 
-                <div className="divider">
-                    <span>OR</span>
-                </div>
+                        <div className="divider">
+                            <span>OR</span>
+                        </div>
 
-                <form onSubmit={handleSubmit}>
-                    <div className="form-group">
-                        <label htmlFor="email">Email</label>
-                        <input
-                            type="email"
-                            id="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
-                            placeholder="Enter your email"
-                        />
+                        <div className="google-login-wrapper">
+                            <GoogleLogin
+                                onSuccess={handleGoogleSuccess}
+                                onError={handleGoogleError}
+                                useOneTap
+                                width="100%"
+                            />
+                        </div>
+                        
+                        <p className="auth-link">
+                            Belum punya akun? <Link to="/register">Daftar di sini</Link>
+                        </p>
                     </div>
-                    <div className="form-group">
-                        <label htmlFor="password">Password</label>
-                        <input
-                            type="password"
-                            id="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                            placeholder="Enter your password"
-                        />
-                    </div>
-                    <button type="submit" disabled={loading} className="btn-primary">
-                        {loading ? 'Loading...' : 'Login'}
-                    </button>
-                </form>
-                <p className="auth-link">
-                    Don't have an account? <Link to="/register">Register here</Link>
-                </p>
+                </div>
             </div>
         </div>
     );

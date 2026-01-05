@@ -11,6 +11,9 @@ const AdminDashboard = () => {
     const [posts, setPosts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [showRejectModal, setShowRejectModal] = useState(false);
+    const [selectedPostId, setSelectedPostId] = useState(null);
+    const [rejectReason, setRejectReason] = useState('');
 
     useEffect(() => {
         // Redirect if not admin
@@ -96,20 +99,37 @@ const AdminDashboard = () => {
     };
 
     const handleRejectPost = async (postId) => {
+        setSelectedPostId(postId);
+        setShowRejectModal(true);
+    };
+
+    const confirmRejectPost = async () => {
+        if (!rejectReason.trim()) {
+            alert('Mohon berikan alasan penolakan');
+            return;
+        }
+
         try {
             const token = localStorage.getItem('token');
-            const response = await fetch(`http://localhost:8000/api/admin/posts/${postId}/reject`, {
+            const response = await fetch(`http://localhost:8000/api/admin/posts/${selectedPostId}/reject`, {
                 method: 'PATCH',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Accept': 'application/json',
+                    'Content-Type': 'application/json',
                 },
+                body: JSON.stringify({
+                    reject_reason: rejectReason
+                })
             });
 
             if (!response.ok) {
                 throw new Error('Failed to reject post');
             }
 
+            setShowRejectModal(false);
+            setRejectReason('');
+            setSelectedPostId(null);
             fetchPendingPosts();
         } catch (err) {
             setError(err.message);
@@ -358,6 +378,39 @@ const AdminDashboard = () => {
                     </div>
                 )}
             </div>
+
+            {/* Reject Modal */}
+            {showRejectModal && (
+                <div className="modal-overlay" onClick={() => setShowRejectModal(false)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3>Alasan Penolakan</h3>
+                            <button onClick={() => setShowRejectModal(false)} className="modal-close-btn">
+                                ✕
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <label htmlFor="reject-reason">Berikan alasan mengapa postingan ini ditolak:</label>
+                            <textarea
+                                id="reject-reason"
+                                value={rejectReason}
+                                onChange={(e) => setRejectReason(e.target.value)}
+                                placeholder="Contoh: Konten tidak sesuai dengan pedoman komunitas..."
+                                rows="5"
+                                className="reject-textarea"
+                            />
+                        </div>
+                        <div className="modal-footer">
+                            <button onClick={() => setShowRejectModal(false)} className="btn-cancel">
+                                Batal
+                            </button>
+                            <button onClick={confirmRejectPost} className="btn-confirm-reject">
+                                Tolak Postingan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

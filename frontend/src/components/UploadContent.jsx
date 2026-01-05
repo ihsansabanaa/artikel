@@ -8,7 +8,7 @@ const UploadContent = () => {
     const { user, logout } = useAuth();
     const [content, setContent] = useState('');
     const [image, setImage] = useState(null);
-    const [document, setDocument] = useState(null);
+    const [documentFile, setDocumentFile] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -39,7 +39,7 @@ const UploadContent = () => {
                 setError('Ukuran dokumen maksimal 10MB');
                 return;
             }
-            setDocument(file);
+            setDocumentFile(file);
         }
     };
 
@@ -49,7 +49,7 @@ const UploadContent = () => {
         setSuccess('');
 
         // Validate at least one field
-        if (!content && !image && !document) {
+        if (!content && !image && !documentFile) {
             setError('Harap isi setidaknya salah satu: teks, gambar, atau dokumen.');
             return;
         }
@@ -60,7 +60,7 @@ const UploadContent = () => {
             const formData = new FormData();
             if (content) formData.append('content', content);
             if (image) formData.append('image', image);
-            if (document) formData.append('document', document);
+            if (documentFile) formData.append('document', documentFile);
 
             const token = localStorage.getItem('token');
             const response = await fetch('http://localhost:8000/api/posts', {
@@ -82,7 +82,7 @@ const UploadContent = () => {
             // Reset form
             setContent('');
             setImage(null);
-            setDocument(null);
+            setDocumentFile(null);
             setImagePreview(null);
             // Reset file inputs
             document.getElementById('image-input').value = '';
@@ -106,9 +106,7 @@ const UploadContent = () => {
             <header className="top-header">
                 <div className="header-content">
                     <div className="logo">
-                        <svg viewBox="0 0 24 24" aria-hidden="true" className="logo-icon">
-                            <g><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path></g>
-                        </svg>
+                        <h1 className="site-title">ArticleHub</h1>
                     </div>
                     <nav className="header-nav">
                         <span className="user-name">Hi, {user?.name}</span>
@@ -156,10 +154,10 @@ const UploadContent = () => {
 
                         <div className="nav-divider"></div>
 
-                        <div className="user-profile-card">
+                        <button className="user-profile-card" onClick={() => navigate('/profile')}>
                             <div className="user-profile-info">
-                                {user?.avatar ? (
-                                    <img src={user.avatar} alt={user.name} className="user-profile-avatar" />
+                                {user?.profile_image || user?.avatar ? (
+                                    <img src={user.profile_image || user.avatar} alt={user.name} className="user-profile-avatar" />
                                 ) : (
                                     <div className="user-profile-avatar-placeholder">
                                         {user?.name.charAt(0).toUpperCase()}
@@ -170,7 +168,7 @@ const UploadContent = () => {
                                     <span className="user-profile-email">{user?.email}</span>
                                 </div>
                             </div>
-                        </div>
+                        </button>
                     </nav>
                 </aside>
 
@@ -215,18 +213,18 @@ const UploadContent = () => {
                             )}
 
                             {/* Document Preview */}
-                            {document && (
+                            {documentFile && (
                                 <div className="document-preview-box">
                                     <div className="document-info">
                                         <svg viewBox="0 0 24 24" className="document-icon" width="24" height="24">
                                             <g><path d="M7 4V3h2v1h6V3h2v1h1.5C19.89 4 21 5.12 21 6.5v12c0 1.38-1.11 2.5-2.5 2.5h-13C4.12 21 3 19.88 3 18.5v-12C3 5.12 4.12 4 5.5 4H7zm0 2H5.5c-.27 0-.5.22-.5.5v12c0 .28.23.5.5.5h13c.28 0 .5-.22.5-.5v-12c0-.28-.22-.5-.5-.5H17v1h-2V6H9v1H7V6zm0 6h2v-2H7v2zm0 4h2v-2H7v2zm4-4h2v-2h-2v2zm0 4h2v-2h-2v2zm4-4h2v-2h-2v2z"></path></g>
                                         </svg>
-                                        <span className="document-name">{document.name}</span>
+                                        <span className="document-name">{documentFile.name}</span>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            setDocument(null);
+                                            setDocumentFile(null);
                                             document.getElementById('document-input').value = '';
                                         }}
                                         className="btn-remove-doc"
@@ -268,7 +266,7 @@ const UploadContent = () => {
 
                                 <button
                                     type="submit"
-                                    disabled={loading || (!content && !image && !document)}
+                                    disabled={loading || (!content && !image && !documentFile)}
                                     className="btn-post"
                                 >
                                     {loading ? 'Memposting...' : 'Posting'}

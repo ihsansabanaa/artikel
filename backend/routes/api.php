@@ -24,6 +24,19 @@ Route::post('/auth/google/login', [SocialAuthController::class, 'loginWithGoogle
 // Public posts route - approved posts for landing page
 Route::get('/posts/approved', [PostController::class, 'getApprovedPosts']);
 
+// Post interactions (auth required)
+Route::post('/posts/{id}/like', [PostController::class, 'like'])->middleware('auth:sanctum');
+Route::post('/posts/{id}/unlike', [PostController::class, 'unlike'])->middleware('auth:sanctum');
+Route::post('/posts/{id}/view', [PostController::class, 'incrementView'])->middleware('optional.auth');
+Route::get('/posts/{id}/check-like', [PostController::class, 'checkLike'])->middleware('optional.auth');
+
+// Comments (public read, auth required for write)
+Route::get('/posts/{id}/comments', [PostController::class, 'getComments']);
+Route::post('/posts/{id}/comments', [PostController::class, 'addComment'])->middleware('auth:sanctum');
+
+// Download file (auth required)
+Route::get('/posts/{id}/download', [PostController::class, 'downloadDocument'])->middleware('auth:sanctum');
+
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
@@ -31,6 +44,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
+
+    // User profile routes
+    Route::post('/user/profile', [AuthController::class, 'updateProfile']);
 
     // User posts routes
     Route::prefix('posts')->group(function () {

@@ -12,24 +12,33 @@ export const AuthProvider = ({ children }) => {
     const login = async (email, password) => {
         const data = await authService.login(email, password);
         setUser(data.user);
+        localStorage.setItem('user', JSON.stringify(data.user));
         return data;
     };
 
     const register = async (name, email, password, password_confirmation) => {
         const data = await authService.register(name, email, password, password_confirmation);
         setUser(data.user);
+        localStorage.setItem('user', JSON.stringify(data.user));
         return data;
     };
 
     const logout = async () => {
         await authService.logout();
         setUser(null);
+        localStorage.removeItem('user');
     };
 
     const loginWithGoogle = async (credentialResponse) => {
         const data = await authService.loginWithGoogle(credentialResponse);
         setUser(data.user);
+        localStorage.setItem('user', JSON.stringify(data.user));
         return data;
+    };
+
+    const updateUser = (updatedUser) => {
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
     };
 
     const value = {
@@ -38,6 +47,7 @@ export const AuthProvider = ({ children }) => {
         register,
         logout,
         loginWithGoogle,
+        updateUser,
         isAuthenticated: !!user,
         loading: false,
     };
